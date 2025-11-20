@@ -1,269 +1,382 @@
 const express = require('express');
 const cors = require('cors');
-const Database = require('better-sqlite3');
+const { Pool } = require('pg');
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize SQLite database
-const db = new Database('database.db');
+// Initialize PostgreSQL connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
 // Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS companies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    status TEXT DEFAULT 'active',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+async function initializeDatabase() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS companies (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
 
-  CREATE TABLE IF NOT EXISTS gateways (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    company_id INTEGER NOT NULL,
-    pg_partner TEXT,
-    status TEXT DEFAULT 'active',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (company_id) REFERENCES companies(id)
-  );
+      CREATE TABLE IF NOT EXISTS gateways (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        company_id INTEGER NOT NULL,
+        pg_partner TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (company_id) REFERENCES companies(id)
+      );
 
-  CREATE TABLE IF NOT EXISTS rates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    gateway_id INTEGER NOT NULL,
-    card_type TEXT NOT NULL,
-    card_issuer TEXT NOT NULL,
-    category TEXT NOT NULL,
-    commission REAL NOT NULL,
-    surcharge REAL DEFAULT 0,
-    min_amount REAL NOT NULL,
-    max_amount REAL NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (gateway_id) REFERENCES gateways(id)
-  );
+      CREATE TABLE IF NOT EXISTS rates (
+        id SERIAL PRIMARY KEY,
+        gateway_id INTEGER NOT NULL,
+        card_type TEXT NOT NULL,
+        card_issuer TEXT NOT NULL,
+        category TEXT NOT NULL,
+        commission DECIMAL NOT NULL,
+        surcharge DECIMAL DEFAULT 0,
+        min_amount DECIMAL NOT NULL,
+        max_amount DECIMAL NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (gateway_id) REFERENCES gateways(id)
+      );
 
-  CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    categories TEXT NOT NULL,
-    card_types TEXT NOT NULL,
-    card_issuers TEXT NOT NULL,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+      CREATE TABLE IF NOT EXISTS settings (
+        id INTEGER PRIMARY KEY,
+        categories TEXT NOT NULL,
+        card_types TEXT NOT NULL,
+        card_issuers TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT settings_single_row CHECK (id = 1)
+      );
 
-  CREATE TABLE IF NOT EXISTS favorites (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    card_type TEXT NOT NULL,
-    card_issuer TEXT NOT NULL,
-    amount REAL NOT NULL,
-    category TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
+      CREATE TABLE IF NOT EXISTS favorites (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        card_type TEXT NOT NULL,
+        card_issuer TEXT NOT NULL,
+        amount DECIMAL NOT NULL,
+        category TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-// Initialize default data if empty
-const companyCount = db.prepare('SELECT COUNT(*) as count FROM companies').get();
-if (companyCount.count === 0) {
-  console.log('Loading default SLPE data...');
-  
-  // Insert default SLPE company
-  const insertCompany = db.prepare('INSERT INTO companies (name, description) VALUES (?, ?)');
-  insertCompany.run('SLPE', 'SLPE Service Provider');
+    // Initialize default data if empty
+    const countResult = await client.query('SELECT COUNT(*) as count FROM companies');
+    if (countResult.rows[0].count === '0') {
+      console.log('Loading default SLPE data...');
+      
+      // Insert default SLPE company
+      const companyResult = await client.query(
+        'INSERT INTO companies (name, description) VALUES ($1, $2) RETURNING id',
+        ['SLPE', 'SLPE Service Provider']
+      );
+      const companyId = companyResult.rows[0].id;
 
-  const companyId = db.prepare('SELECT id FROM companies WHERE name = ?').get('SLPE').id;
+      // Insert gateways
+      const gateways = [
+        ['Slpe silver edu pro', companyId, 'slpe_silver_edu_pro'],
+        ['Slpe silver edu', companyId, 'slpe_silver_edu'],
+        ['Slpe gold travel pure', companyId, 'slpe_gold_travel_pure'],
+        ['Slpe silver edu lite', companyId, 'razorpay'],
+        ['Slpe gold travel prime', companyId, 'razorpay'],
+        ['Slpe gold travel', companyId, 'payu'],
+        ['Slpe gold travel lite', companyId, 'slpe_gold_travel_lite'],
+        ['Slpe silver prime edu', companyId, 'slpe_silver_prime_edu'],
+        ['Razorpay', companyId, 'razorpay'],
+        ['Payu', companyId, 'payu']
+      ];
+      
+      for (const gateway of gateways) {
+        await client.query(
+          'INSERT INTO gateways (name, company_id, pg_partner) VALUES ($1, $2, $3)',
+          gateway
+        );
+      }
 
-  // Insert gateways
-  const insertGateway = db.prepare('INSERT INTO gateways (name, company_id, pg_partner) VALUES (?, ?, ?)');
-  const gateways = [
-    ['Slpe silver edu pro', companyId, 'slpe_silver_edu_pro'],
-    ['Slpe silver edu', companyId, 'slpe_silver_edu'],
-    ['Slpe gold travel pure', companyId, 'slpe_gold_travel_pure'],
-    ['Slpe silver edu lite', companyId, 'razorpay'],
-    ['Slpe gold travel prime', companyId, 'razorpay'],
-    ['Slpe gold travel', companyId, 'payu'],
-    ['Slpe gold travel lite', companyId, 'slpe_gold_travel_lite'],
-    ['Slpe silver prime edu', companyId, 'slpe_silver_prime_edu'],
-    ['Razorpay', companyId, 'razorpay'],
-    ['Payu', companyId, 'payu']
-  ];
-  gateways.forEach(g => insertGateway.run(...g));
+      // Insert rates
+      const rates = [
+        [1, 'business', 'others', 'education', 2.7178, 0, 100, 100000],
+        [1, 'consumer', 'others', 'education', 1.9, 0, 100, 100000],
+        [2, 'R', 'others', 'education', 1.6, 0, 100, 50000],
+        [2, 'P', 'others', 'education', 1.6, 0, 100, 50000],
+        [2, 'C', 'others', 'education', 1.6, 0, 100, 50000],
+        [2, 'upi_credit_card', 'others', 'education', 3, 0, 100, 50000],
+        [3, 'business', 'others', 'travel', 1.85, 0, 100, 50000],
+        [3, 'consumer', 'others', 'travel', 1.39, 0, 100, 50000],
+        [4, 'business', 'others', 'education', 1.85, 0, 100, 95000],
+        [4, 'consumer', 'others', 'education', 1.29, 0, 100, 95000],
+        [5, 'business', 'others', 'travel', 1.85, 0, 100, 40000],
+        [5, 'consumer', 'others', 'travel', 1.39, 0, 100, 40000],
+        [6, 'CC', 'others', 'travel', 1.45, 0, 100, 100000],
+        [7, 'upi_credit_card', 'others', 'travel', 3, 0, 100, 50000],
+        [7, 'C', 'others', 'travel', 1.6, 0, 100, 50000],
+        [7, 'P', 'others', 'travel', 1.6, 0, 100, 50000],
+        [7, 'R', 'others', 'travel', 1.6, 0, 100, 50000],
+        [8, 'corporate', 'others', 'education', 1.8, 0, 100, 200000],
+        [8, 'domestic', 'others', 'education', 1.4, 0, 100, 200000],
+        [9, 'Visa', 'others', 'general', 1.2, 0, 100, 95000],
+        [10, 'CC', 'others', 'general', 1.2, 0, 10, 100000],
+        [9, 'business_visa', 'HDFC', 'general', 2.9, 0, 100, 95000],
+        [9, 'Visa', 'HDFC', 'general', 1.4, 0, 100, 95000],
+        [9, 'business_visa', 'others', 'general', 1.5, 0, 100, 95000],
+        [9, 'upi', 'others', 'general', 3, 0, 100, 95000]
+      ];
+      
+      for (const rate of rates) {
+        await client.query(
+          'INSERT INTO rates (gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+          rate
+        );
+      }
 
-  // Insert rates
-  const insertRate = db.prepare('INSERT INTO rates (gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const rates = [
-    [1, 'business', 'others', 'education', 2.7178, 0, 100, 100000],
-    [1, 'consumer', 'others', 'education', 1.9, 0, 100, 100000],
-    [2, 'R', 'others', 'education', 1.6, 0, 100, 50000],
-    [2, 'P', 'others', 'education', 1.6, 0, 100, 50000],
-    [2, 'C', 'others', 'education', 1.6, 0, 100, 50000],
-    [2, 'upi_credit_card', 'others', 'education', 3, 0, 100, 50000],
-    [3, 'business', 'others', 'travel', 1.85, 0, 100, 50000],
-    [3, 'consumer', 'others', 'travel', 1.39, 0, 100, 50000],
-    [4, 'business', 'others', 'education', 1.85, 0, 100, 95000],
-    [4, 'consumer', 'others', 'education', 1.29, 0, 100, 95000],
-    [5, 'business', 'others', 'travel', 1.85, 0, 100, 40000],
-    [5, 'consumer', 'others', 'travel', 1.39, 0, 100, 40000],
-    [6, 'CC', 'others', 'travel', 1.45, 0, 100, 100000],
-    [7, 'upi_credit_card', 'others', 'travel', 3, 0, 100, 50000],
-    [7, 'C', 'others', 'travel', 1.6, 0, 100, 50000],
-    [7, 'P', 'others', 'travel', 1.6, 0, 100, 50000],
-    [7, 'R', 'others', 'travel', 1.6, 0, 100, 50000],
-    [8, 'corporate', 'others', 'education', 1.8, 0, 100, 200000],
-    [8, 'domestic', 'others', 'education', 1.4, 0, 100, 200000],
-    [9, 'Visa', 'others', 'general', 1.2, 0, 100, 95000],
-    [10, 'CC', 'others', 'general', 1.2, 0, 10, 100000],
-    [9, 'business_visa', 'HDFC', 'general', 2.9, 0, 100, 95000],
-    [9, 'Visa', 'HDFC', 'general', 1.4, 0, 100, 95000],
-    [9, 'business_visa', 'others', 'general', 1.5, 0, 100, 95000],
-    [9, 'upi', 'others', 'general', 3, 0, 100, 95000]
-  ];
-  rates.forEach(r => insertRate.run(...r));
-
-  // Insert default settings
-  const defaultSettings = {
-    categories: JSON.stringify(['education', 'gold', 'travel', 'fastag', 'utility', 'non_utility', 'general']),
-    card_types: JSON.stringify(['business', 'consumer', 'R', 'P', 'C', 'CC', 'upi_credit_card', 'business_visa', 'Visa', 'corporate', 'domestic', 'upi']),
-    card_issuers: JSON.stringify(['HDFC', 'ICICI', 'SBI', 'AXIS', 'others'])
-  };
-  db.prepare('INSERT INTO settings (id, categories, card_types, card_issuers) VALUES (1, ?, ?, ?)').run(
-    defaultSettings.categories,
-    defaultSettings.card_types,
-    defaultSettings.card_issuers
-  );
-  
-  console.log('Default SLPE data loaded successfully');
+      // Insert default settings
+      const defaultSettings = {
+        categories: JSON.stringify(['education', 'gold', 'travel', 'fastag', 'utility', 'non_utility', 'general']),
+        card_types: JSON.stringify(['business', 'consumer', 'R', 'P', 'C', 'CC', 'upi_credit_card', 'business_visa', 'Visa', 'corporate', 'domestic', 'upi']),
+        card_issuers: JSON.stringify(['HDFC', 'ICICI', 'SBI', 'AXIS', 'others'])
+      };
+      
+      await client.query(
+        'INSERT INTO settings (id, categories, card_types, card_issuers) VALUES (1, $1, $2, $3)',
+        [defaultSettings.categories, defaultSettings.card_types, defaultSettings.card_issuers]
+      );
+      
+      console.log('Default SLPE data loaded successfully');
+    }
+  } finally {
+    client.release();
+  }
 }
+
+// Initialize database on startup
+initializeDatabase().catch(err => {
+  console.error('Database initialization error:', err);
+  process.exit(1);
+});
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('.'));
+app.use(express.static('public'));
 
 // API Routes
 
 // Companies
-app.get('/api/companies', (req, res) => {
-  const companies = db.prepare('SELECT * FROM companies ORDER BY name').all();
-  res.json(companies);
-});
-
-app.post('/api/companies', (req, res) => {
-  const { name, description } = req.body;
-  const result = db.prepare('INSERT INTO companies (name, description) VALUES (?, ?)').run(name, description || '');
-  res.json({ id: result.lastInsertRowid, name, description, status: 'active' });
-});
-
-app.put('/api/companies/:id', (req, res) => {
-  const { name, description, status } = req.body;
-  db.prepare('UPDATE companies SET name = ?, description = ?, status = ? WHERE id = ?').run(name, description, status, req.params.id);
-  res.json({ id: req.params.id, name, description, status });
-});
-
-app.delete('/api/companies/:id', (req, res) => {
-  db.prepare('DELETE FROM companies WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
-});
-
-// Gateways
-app.get('/api/gateways', (req, res) => {
-  const gateways = db.prepare('SELECT * FROM gateways ORDER BY name').all();
-  res.json(gateways);
-});
-
-app.post('/api/gateways', (req, res) => {
-  const { name, company_id, pg_partner } = req.body;
-  const result = db.prepare('INSERT INTO gateways (name, company_id, pg_partner) VALUES (?, ?, ?)').run(name, company_id, pg_partner || '');
-  res.json({ id: result.lastInsertRowid, name, company_id, pg_partner, status: 'active' });
-});
-
-app.put('/api/gateways/:id', (req, res) => {
-  const { name, company_id, pg_partner, status } = req.body;
-  db.prepare('UPDATE gateways SET name = ?, company_id = ?, pg_partner = ?, status = ? WHERE id = ?').run(name, company_id, pg_partner, status, req.params.id);
-  res.json({ id: req.params.id, name, company_id, pg_partner, status });
-});
-
-app.delete('/api/gateways/:id', (req, res) => {
-  db.prepare('DELETE FROM gateways WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
-});
-
-// Rates
-app.get('/api/rates', (req, res) => {
-  const rates = db.prepare('SELECT * FROM rates').all();
-  res.json(rates);
-});
-
-app.post('/api/rates', (req, res) => {
-  const { gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount } = req.body;
-  const result = db.prepare('INSERT INTO rates (gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-    gateway_id, card_type, card_issuer, category, commission, surcharge || 0, min_amount, max_amount
-  );
-  res.json({ id: result.lastInsertRowid, ...req.body });
-});
-
-app.put('/api/rates/:id', (req, res) => {
-  const { gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount } = req.body;
-  db.prepare('UPDATE rates SET gateway_id = ?, card_type = ?, card_issuer = ?, category = ?, commission = ?, surcharge = ?, min_amount = ?, max_amount = ? WHERE id = ?').run(
-    gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount, req.params.id
-  );
-  res.json({ id: req.params.id, ...req.body });
-});
-
-app.delete('/api/rates/:id', (req, res) => {
-  db.prepare('DELETE FROM rates WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
-});
-
-// Settings
-app.get('/api/settings', (req, res) => {
-  const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (settings) {
-    res.json({
-      categories: JSON.parse(settings.categories),
-      cardTypes: JSON.parse(settings.card_types),
-      cardIssuers: JSON.parse(settings.card_issuers)
-    });
-  } else {
-    res.json({ categories: [], cardTypes: [], cardIssuers: [] });
+app.get('/api/companies', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM companies ORDER BY name');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/settings', (req, res) => {
-  const { categories, cardTypes, cardIssuers } = req.body;
-  db.prepare('UPDATE settings SET categories = ?, card_types = ?, card_issuers = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1').run(
-    JSON.stringify(categories),
-    JSON.stringify(cardTypes),
-    JSON.stringify(cardIssuers)
-  );
-  res.json({ categories, cardTypes, cardIssuers });
+app.post('/api/companies', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const result = await pool.query(
+      'INSERT INTO companies (name, description) VALUES ($1, $2) RETURNING *',
+      [name, description || '']
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/companies/:id', async (req, res) => {
+  try {
+    const { name, description, status } = req.body;
+    const result = await pool.query(
+      'UPDATE companies SET name = $1, description = $2, status = $3 WHERE id = $4 RETURNING *',
+      [name, description, status, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/companies/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM companies WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Gateways
+app.get('/api/gateways', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM gateways ORDER BY name');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/gateways', async (req, res) => {
+  try {
+    const { name, company_id, pg_partner } = req.body;
+    const result = await pool.query(
+      'INSERT INTO gateways (name, company_id, pg_partner) VALUES ($1, $2, $3) RETURNING *',
+      [name, company_id, pg_partner || '']
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/gateways/:id', async (req, res) => {
+  try {
+    const { name, company_id, pg_partner, status } = req.body;
+    const result = await pool.query(
+      'UPDATE gateways SET name = $1, company_id = $2, pg_partner = $3, status = $4 WHERE id = $5 RETURNING *',
+      [name, company_id, pg_partner, status, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/gateways/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM gateways WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Rates
+app.get('/api/rates', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM rates');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/rates', async (req, res) => {
+  try {
+    const { gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount } = req.body;
+    const result = await pool.query(
+      'INSERT INTO rates (gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+      [gateway_id, card_type, card_issuer, category, commission, surcharge || 0, min_amount, max_amount]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/rates/:id', async (req, res) => {
+  try {
+    const { gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount } = req.body;
+    const result = await pool.query(
+      'UPDATE rates SET gateway_id = $1, card_type = $2, card_issuer = $3, category = $4, commission = $5, surcharge = $6, min_amount = $7, max_amount = $8 WHERE id = $9 RETURNING *',
+      [gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/rates/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM rates WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Settings
+app.get('/api/settings', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM settings WHERE id = 1');
+    if (result.rows.length > 0) {
+      const settings = result.rows[0];
+      res.json({
+        categories: JSON.parse(settings.categories),
+        cardTypes: JSON.parse(settings.card_types),
+        cardIssuers: JSON.parse(settings.card_issuers)
+      });
+    } else {
+      res.json({ categories: [], cardTypes: [], cardIssuers: [] });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/settings', async (req, res) => {
+  try {
+    const { categories, cardTypes, cardIssuers } = req.body;
+    await pool.query(
+      'UPDATE settings SET categories = $1, card_types = $2, card_issuers = $3, updated_at = CURRENT_TIMESTAMP WHERE id = 1',
+      [JSON.stringify(categories), JSON.stringify(cardTypes), JSON.stringify(cardIssuers)]
+    );
+    res.json({ categories, cardTypes, cardIssuers });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Favorites
-app.get('/api/favorites', (req, res) => {
-  const favorites = db.prepare('SELECT * FROM favorites ORDER BY created_at DESC').all();
-  res.json(favorites);
+app.get('/api/favorites', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM favorites ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/favorites', (req, res) => {
-  const { name, card_type, card_issuer, amount, category } = req.body;
-  const result = db.prepare('INSERT INTO favorites (name, card_type, card_issuer, amount, category) VALUES (?, ?, ?, ?, ?)').run(
-    name, card_type, card_issuer, amount, category || ''
-  );
-  res.json({ id: result.lastInsertRowid, ...req.body });
+app.post('/api/favorites', async (req, res) => {
+  try {
+    const { name, card_type, card_issuer, amount, category } = req.body;
+    const result = await pool.query(
+      'INSERT INTO favorites (name, card_type, card_issuer, amount, category) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [name, card_type, card_issuer, amount, category || '']
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.delete('/api/favorites/:id', (req, res) => {
-  db.prepare('DELETE FROM favorites WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
+app.delete('/api/favorites/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM favorites WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Serve frontend
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Railway/Render deployment ready!`);
+  console.log(`Render/Railway deployment ready with PostgreSQL!`);
 });
