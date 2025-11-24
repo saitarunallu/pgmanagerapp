@@ -105,43 +105,47 @@ async function initializeDatabase() {
           'INSERT INTO gateways (name, company_id, pg_partner) VALUES ($1, $2, $3) RETURNING id',
           [name, companyId, pg_partner]
         );
-        gatewayIds[i + 1] = result.rows[0].id; // Map old index to actual ID
+        gatewayIds[i + 1] = result.rows[0].id;
       }
 
       // Insert rates using actual gateway IDs
-      const rates = [
-        [gatewayIds[1], 'business', 'others', 'education', 2.7178, 0, 100, 100000],
-        [gatewayIds[1], 'consumer', 'others', 'education', 1.9, 0, 100, 100000],
-        [gatewayIds[2], 'R', 'others', 'education', 1.6, 0, 100, 50000],
-        [gatewayIds[2], 'P', 'others', 'education', 1.6, 0, 100, 50000],
-        [gatewayIds[2], 'C', 'others', 'education', 1.6, 0, 100, 50000],
-        [gatewayIds[2], 'upi_credit_card', 'others', 'education', 3, 0, 100, 50000],
-        [gatewayIds[3], 'business', 'others', 'travel', 1.85, 0, 100, 50000],
-        [gatewayIds[3], 'consumer', 'others', 'travel', 1.39, 0, 100, 50000],
-        [gatewayIds[4], 'business', 'others', 'education', 1.85, 0, 100, 95000],
-        [gatewayIds[4], 'consumer', 'others', 'education', 1.29, 0, 100, 95000],
-        [gatewayIds[5], 'business', 'others', 'travel', 1.85, 0, 100, 40000],
-        [gatewayIds[5], 'consumer', 'others', 'travel', 1.39, 0, 100, 40000],
-        [gatewayIds[6], 'CC', 'others', 'travel', 1.45, 0, 100, 100000],
-        [gatewayIds[7], 'upi_credit_card', 'others', 'travel', 3, 0, 100, 50000],
-        [gatewayIds[7], 'C', 'others', 'travel', 1.6, 0, 100, 50000],
-        [gatewayIds[7], 'P', 'others', 'travel', 1.6, 0, 100, 50000],
-        [gatewayIds[7], 'R', 'others', 'travel', 1.6, 0, 100, 50000],
-        [gatewayIds[8], 'corporate', 'others', 'education', 1.8, 0, 100, 200000],
-        [gatewayIds[8], 'domestic', 'others', 'education', 1.4, 0, 100, 200000],
-        [gatewayIds[9], 'Visa', 'others', 'general', 1.2, 0, 100, 95000],
-        [gatewayIds[10], 'CC', 'others', 'general', 1.2, 0, 10, 100000],
-        [gatewayIds[9], 'business_visa', 'HDFC', 'general', 2.9, 0, 100, 95000],
-        [gatewayIds[9], 'Visa', 'HDFC', 'general', 1.4, 0, 100, 95000],
-        [gatewayIds[9], 'business_visa', 'others', 'general', 1.5, 0, 100, 95000],
-        [gatewayIds[9], 'upi', 'others', 'general', 3, 0, 100, 95000]
-      ];
-      
-      for (const rate of rates) {
-        await client.query(
-          'INSERT INTO rates (gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-          rate
-        );
+      if (Object.keys(gatewayIds).length > 0) {
+        const rates = [
+          [gatewayIds[1], 'business', 'others', 'education', 2.7178, 0, 100, 100000],
+          [gatewayIds[1], 'consumer', 'others', 'education', 1.9, 0, 100, 100000],
+          [gatewayIds[2], 'R', 'others', 'education', 1.6, 0, 100, 50000],
+          [gatewayIds[2], 'P', 'others', 'education', 1.6, 0, 100, 50000],
+          [gatewayIds[2], 'C', 'others', 'education', 1.6, 0, 100, 50000],
+          [gatewayIds[2], 'upi_credit_card', 'others', 'education', 3, 0, 100, 50000],
+          [gatewayIds[3], 'business', 'others', 'travel', 1.85, 0, 100, 50000],
+          [gatewayIds[3], 'consumer', 'others', 'travel', 1.39, 0, 100, 50000],
+          [gatewayIds[4], 'business', 'others', 'education', 1.85, 0, 100, 95000],
+          [gatewayIds[4], 'consumer', 'others', 'education', 1.29, 0, 100, 95000],
+          [gatewayIds[5], 'business', 'others', 'travel', 1.85, 0, 100, 40000],
+          [gatewayIds[5], 'consumer', 'others', 'travel', 1.39, 0, 100, 40000],
+          [gatewayIds[6], 'CC', 'others', 'travel', 1.45, 0, 100, 100000],
+          [gatewayIds[7], 'upi_credit_card', 'others', 'travel', 3, 0, 100, 50000],
+          [gatewayIds[7], 'C', 'others', 'travel', 1.6, 0, 100, 50000],
+          [gatewayIds[7], 'P', 'others', 'travel', 1.6, 0, 100, 50000],
+          [gatewayIds[7], 'R', 'others', 'travel', 1.6, 0, 100, 50000],
+          [gatewayIds[8], 'corporate', 'others', 'education', 1.8, 0, 100, 200000],
+          [gatewayIds[8], 'domestic', 'others', 'education', 1.4, 0, 100, 200000],
+          [gatewayIds[9], 'Visa', 'others', 'general', 1.2, 0, 100, 95000],
+          [gatewayIds[10], 'CC', 'others', 'general', 1.2, 0, 10, 100000],
+          [gatewayIds[9], 'business_visa', 'HDFC', 'general', 2.9, 0, 100, 95000],
+          [gatewayIds[9], 'Visa', 'HDFC', 'general', 1.4, 0, 100, 95000],
+          [gatewayIds[9], 'business_visa', 'others', 'general', 1.5, 0, 100, 95000],
+          [gatewayIds[9], 'upi', 'others', 'general', 3, 0, 100, 95000]
+        ];
+        
+        for (const rate of rates) {
+          if (rate[0]) {
+            await client.query(
+              'INSERT INTO rates (gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+              rate
+            );
+          }
+        }
       }
 
       // Insert default settings
@@ -158,23 +162,20 @@ async function initializeDatabase() {
       
       console.log('Default SLPE data loaded successfully');
     }
+  } catch (err) {
+    console.error('Database initialization error:', err);
+    console.error('Stack:', err.stack);
   } finally {
     client.release();
   }
 }
 
-// Initialize database on startup
-initializeDatabase().catch(err => {
-  console.error('Database initialization error:', err);
-  process.exit(1);
-});
+initializeDatabase();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
-
-// API Routes
 
 // Companies
 app.get('/api/companies', async (req, res) => {
@@ -206,6 +207,9 @@ app.put('/api/companies/:id', async (req, res) => {
       'UPDATE companies SET name = $1, description = $2, status = $3 WHERE id = $4 RETURNING *',
       [name, description, status, req.params.id]
     );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -215,11 +219,9 @@ app.put('/api/companies/:id', async (req, res) => {
 app.delete('/api/companies/:id', async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM companies WHERE id = $1 RETURNING *', [req.params.id]);
-    
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Company not found' });
     }
-    
     res.json({ success: true, message: 'Company deleted successfully' });
   } catch (err) {
     console.error('Delete company error:', err);
@@ -257,6 +259,9 @@ app.put('/api/gateways/:id', async (req, res) => {
       'UPDATE gateways SET name = $1, company_id = $2, pg_partner = $3, status = $4 WHERE id = $5 RETURNING *',
       [name, company_id, pg_partner, status, req.params.id]
     );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Gateway not found' });
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -266,11 +271,9 @@ app.put('/api/gateways/:id', async (req, res) => {
 app.delete('/api/gateways/:id', async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM gateways WHERE id = $1 RETURNING *', [req.params.id]);
-    
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Gateway not found' });
     }
-    
     res.json({ success: true, message: 'Gateway deleted successfully' });
   } catch (err) {
     console.error('Delete gateway error:', err);
@@ -308,6 +311,9 @@ app.put('/api/rates/:id', async (req, res) => {
       'UPDATE rates SET gateway_id = $1, card_type = $2, card_issuer = $3, category = $4, commission = $5, surcharge = $6, min_amount = $7, max_amount = $8 WHERE id = $9 RETURNING *',
       [gateway_id, card_type, card_issuer, category, commission, surcharge, min_amount, max_amount, req.params.id]
     );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Rate not found' });
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -317,11 +323,9 @@ app.put('/api/rates/:id', async (req, res) => {
 app.delete('/api/rates/:id', async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM rates WHERE id = $1 RETURNING *', [req.params.id]);
-    
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Rate not found' });
     }
-    
     res.json({ success: true, message: 'Rate deleted successfully' });
   } catch (err) {
     console.error('Delete rate error:', err);
@@ -387,11 +391,9 @@ app.post('/api/favorites', async (req, res) => {
 app.delete('/api/favorites/:id', async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM favorites WHERE id = $1 RETURNING *', [req.params.id]);
-    
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Favorite not found' });
     }
-    
     res.json({ success: true, message: 'Favorite deleted successfully' });
   } catch (err) {
     console.error('Delete favorite error:', err);
@@ -399,12 +401,11 @@ app.delete('/api/favorites/:id', async (req, res) => {
   }
 });
 
-// Serve frontend
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Render/Railway deployment ready with PostgreSQL!`);
+  console.log('Render/Railway deployment ready with PostgreSQL!');
 });
