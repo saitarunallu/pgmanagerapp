@@ -73,7 +73,8 @@ async function initializeDatabase() {
 
     // Initialize default data if empty
     const countResult = await client.query('SELECT COUNT(*) as count FROM companies');
-    if (countResult.rows[0].count === '0') {
+    const count = parseInt(countResult.rows[0].count);
+    if (count === 0) {
       console.log('Loading default SLPE data...');
       
       // Insert default SLPE company
@@ -213,9 +214,6 @@ app.put('/api/companies/:id', async (req, res) => {
 
 app.delete('/api/companies/:id', async (req, res) => {
   try {
-    // Delete related data first to avoid foreign key constraint errors
-    await pool.query('DELETE FROM rates WHERE gateway_id IN (SELECT id FROM gateways WHERE company_id = $1)', [req.params.id]);
-    await pool.query('DELETE FROM gateways WHERE company_id = $1', [req.params.id]);
     const result = await pool.query('DELETE FROM companies WHERE id = $1 RETURNING *', [req.params.id]);
     
     if (result.rowCount === 0) {
@@ -267,8 +265,6 @@ app.put('/api/gateways/:id', async (req, res) => {
 
 app.delete('/api/gateways/:id', async (req, res) => {
   try {
-    // Delete related rates first
-    await pool.query('DELETE FROM rates WHERE gateway_id = $1', [req.params.id]);
     const result = await pool.query('DELETE FROM gateways WHERE id = $1 RETURNING *', [req.params.id]);
     
     if (result.rowCount === 0) {
