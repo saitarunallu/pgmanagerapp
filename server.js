@@ -34,7 +34,7 @@ async function initializeDatabase() {
         pg_partner TEXT,
         status TEXT DEFAULT 'active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (company_id) REFERENCES companies(id)
+        FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS rates (
@@ -48,7 +48,7 @@ async function initializeDatabase() {
         min_amount DECIMAL NOT NULL,
         max_amount DECIMAL NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (gateway_id) REFERENCES gateways(id)
+        FOREIGN KEY (gateway_id) REFERENCES gateways(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS settings (
@@ -210,9 +210,13 @@ app.put('/api/companies/:id', async (req, res) => {
 
 app.delete('/api/companies/:id', async (req, res) => {
   try {
+    // Delete related data first to avoid foreign key constraint errors
+    await pool.query('DELETE FROM rates WHERE gateway_id IN (SELECT id FROM gateways WHERE company_id = $1)', [req.params.id]);
+    await pool.query('DELETE FROM gateways WHERE company_id = $1', [req.params.id]);
     await pool.query('DELETE FROM companies WHERE id = $1', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
+    console.error('Delete company error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -255,9 +259,12 @@ app.put('/api/gateways/:id', async (req, res) => {
 
 app.delete('/api/gateways/:id', async (req, res) => {
   try {
+    // Delete related rates first
+    await pool.query('DELETE FROM rates WHERE gateway_id = $1', [req.params.id]);
     await pool.query('DELETE FROM gateways WHERE id = $1', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
+    console.error('Delete gateway error:', err);
     res.status(500).json({ error: err.message });
   }
 });
