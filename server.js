@@ -83,54 +83,57 @@ async function initializeDatabase() {
       );
       const companyId = companyResult.rows[0].id;
 
-      // Insert gateways
-      const gateways = [
-        ['Slpe silver edu pro', companyId, 'slpe_silver_edu_pro'],
-        ['Slpe silver edu', companyId, 'slpe_silver_edu'],
-        ['Slpe gold travel pure', companyId, 'slpe_gold_travel_pure'],
-        ['Slpe silver edu lite', companyId, 'razorpay'],
-        ['Slpe gold travel prime', companyId, 'razorpay'],
-        ['Slpe gold travel', companyId, 'payu'],
-        ['Slpe gold travel lite', companyId, 'slpe_gold_travel_lite'],
-        ['Slpe silver prime edu', companyId, 'slpe_silver_prime_edu'],
-        ['Razorpay', companyId, 'razorpay'],
-        ['Payu', companyId, 'payu']
+      // Insert gateways and capture their IDs
+      const gatewayIds = {};
+      const gatewayData = [
+        ['Slpe silver edu pro', 'slpe_silver_edu_pro'],
+        ['Slpe silver edu', 'slpe_silver_edu'],
+        ['Slpe gold travel pure', 'slpe_gold_travel_pure'],
+        ['Slpe silver edu lite', 'razorpay'],
+        ['Slpe gold travel prime', 'razorpay'],
+        ['Slpe gold travel', 'payu'],
+        ['Slpe gold travel lite', 'slpe_gold_travel_lite'],
+        ['Slpe silver prime edu', 'slpe_silver_prime_edu'],
+        ['Razorpay', 'razorpay'],
+        ['Payu', 'payu']
       ];
       
-      for (const gateway of gateways) {
-        await client.query(
-          'INSERT INTO gateways (name, company_id, pg_partner) VALUES ($1, $2, $3)',
-          gateway
+      for (let i = 0; i < gatewayData.length; i++) {
+        const [name, pg_partner] = gatewayData[i];
+        const result = await client.query(
+          'INSERT INTO gateways (name, company_id, pg_partner) VALUES ($1, $2, $3) RETURNING id',
+          [name, companyId, pg_partner]
         );
+        gatewayIds[i + 1] = result.rows[0].id; // Map old index to actual ID
       }
 
-      // Insert rates
+      // Insert rates using actual gateway IDs
       const rates = [
-        [1, 'business', 'others', 'education', 2.7178, 0, 100, 100000],
-        [1, 'consumer', 'others', 'education', 1.9, 0, 100, 100000],
-        [2, 'R', 'others', 'education', 1.6, 0, 100, 50000],
-        [2, 'P', 'others', 'education', 1.6, 0, 100, 50000],
-        [2, 'C', 'others', 'education', 1.6, 0, 100, 50000],
-        [2, 'upi_credit_card', 'others', 'education', 3, 0, 100, 50000],
-        [3, 'business', 'others', 'travel', 1.85, 0, 100, 50000],
-        [3, 'consumer', 'others', 'travel', 1.39, 0, 100, 50000],
-        [4, 'business', 'others', 'education', 1.85, 0, 100, 95000],
-        [4, 'consumer', 'others', 'education', 1.29, 0, 100, 95000],
-        [5, 'business', 'others', 'travel', 1.85, 0, 100, 40000],
-        [5, 'consumer', 'others', 'travel', 1.39, 0, 100, 40000],
-        [6, 'CC', 'others', 'travel', 1.45, 0, 100, 100000],
-        [7, 'upi_credit_card', 'others', 'travel', 3, 0, 100, 50000],
-        [7, 'C', 'others', 'travel', 1.6, 0, 100, 50000],
-        [7, 'P', 'others', 'travel', 1.6, 0, 100, 50000],
-        [7, 'R', 'others', 'travel', 1.6, 0, 100, 50000],
-        [8, 'corporate', 'others', 'education', 1.8, 0, 100, 200000],
-        [8, 'domestic', 'others', 'education', 1.4, 0, 100, 200000],
-        [9, 'Visa', 'others', 'general', 1.2, 0, 100, 95000],
-        [10, 'CC', 'others', 'general', 1.2, 0, 10, 100000],
-        [9, 'business_visa', 'HDFC', 'general', 2.9, 0, 100, 95000],
-        [9, 'Visa', 'HDFC', 'general', 1.4, 0, 100, 95000],
-        [9, 'business_visa', 'others', 'general', 1.5, 0, 100, 95000],
-        [9, 'upi', 'others', 'general', 3, 0, 100, 95000]
+        [gatewayIds[1], 'business', 'others', 'education', 2.7178, 0, 100, 100000],
+        [gatewayIds[1], 'consumer', 'others', 'education', 1.9, 0, 100, 100000],
+        [gatewayIds[2], 'R', 'others', 'education', 1.6, 0, 100, 50000],
+        [gatewayIds[2], 'P', 'others', 'education', 1.6, 0, 100, 50000],
+        [gatewayIds[2], 'C', 'others', 'education', 1.6, 0, 100, 50000],
+        [gatewayIds[2], 'upi_credit_card', 'others', 'education', 3, 0, 100, 50000],
+        [gatewayIds[3], 'business', 'others', 'travel', 1.85, 0, 100, 50000],
+        [gatewayIds[3], 'consumer', 'others', 'travel', 1.39, 0, 100, 50000],
+        [gatewayIds[4], 'business', 'others', 'education', 1.85, 0, 100, 95000],
+        [gatewayIds[4], 'consumer', 'others', 'education', 1.29, 0, 100, 95000],
+        [gatewayIds[5], 'business', 'others', 'travel', 1.85, 0, 100, 40000],
+        [gatewayIds[5], 'consumer', 'others', 'travel', 1.39, 0, 100, 40000],
+        [gatewayIds[6], 'CC', 'others', 'travel', 1.45, 0, 100, 100000],
+        [gatewayIds[7], 'upi_credit_card', 'others', 'travel', 3, 0, 100, 50000],
+        [gatewayIds[7], 'C', 'others', 'travel', 1.6, 0, 100, 50000],
+        [gatewayIds[7], 'P', 'others', 'travel', 1.6, 0, 100, 50000],
+        [gatewayIds[7], 'R', 'others', 'travel', 1.6, 0, 100, 50000],
+        [gatewayIds[8], 'corporate', 'others', 'education', 1.8, 0, 100, 200000],
+        [gatewayIds[8], 'domestic', 'others', 'education', 1.4, 0, 100, 200000],
+        [gatewayIds[9], 'Visa', 'others', 'general', 1.2, 0, 100, 95000],
+        [gatewayIds[10], 'CC', 'others', 'general', 1.2, 0, 10, 100000],
+        [gatewayIds[9], 'business_visa', 'HDFC', 'general', 2.9, 0, 100, 95000],
+        [gatewayIds[9], 'Visa', 'HDFC', 'general', 1.4, 0, 100, 95000],
+        [gatewayIds[9], 'business_visa', 'others', 'general', 1.5, 0, 100, 95000],
+        [gatewayIds[9], 'upi', 'others', 'general', 3, 0, 100, 95000]
       ];
       
       for (const rate of rates) {
